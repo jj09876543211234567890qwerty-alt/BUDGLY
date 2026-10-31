@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Budget Tracker</title>
+<meta name="description" content="Personal budget tracker with wallets, payables, receivables, savings and smart allocation.">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Budget Tracker">
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/framer-motion@10.18.0/dist/framer-motion.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<noscript>Budget Tracker needs JavaScript to run.</noscript>
+<script>window.fbReady=new Promise(function(r){window.__fbResolve=r});</script>
+<script src="firebase-config.js"></script>
+<script type="module" src="js/firebase.js"></script>
+<script src="js/app.js"></script>
+<script>
+// Offline support: register the service worker and reload once when a new version takes over.
+if('serviceWorker' in navigator){
+  var had=!!navigator.serviceWorker.controller,reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){if(had&&!reloaded){reloaded=true;location.reload()}});
+  addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(e){console.warn('SW registration failed',e)})});
+}
+</script>
+</body>
+</html>
