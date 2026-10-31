@@ -1,6 +1,6 @@
 // Service worker: caches the app shell and CDN libraries so the app opens offline.
 // To ship an update, change VERSION. Installed copies fetch the new files and reload once.
-const VERSION = 'bt-v2';
+const VERSION = 'bt-v3';
 const SHELL = ['./', 'index.html', 'css/styles.css', 'js/app.js', 'js/firebase.js', 'firebase-config.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const CDN = [

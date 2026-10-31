@@ -199,10 +199,10 @@ function App(){
   R.t=Date.now();try{localStorage.setItem(KEY+'.t',String(R.t))}catch(e){}
   if(!R.ref||!R.ready)return;
   clearTimeout(R.timer);setSync('saving');R.timer=setTimeout(push,700)},[S]);
- const[user,setUser]=useState(null);const[acct,setAcct]=useState({email:'',pw:'',msg:''});
+ const[user,setUser]=useState(null);const[acct,setAcct]=useState({email:'',pw:'',msg:''});const[authReady,setAuthReady]=useState(false);const[localOk,setLocalOk]=useState(()=>{try{return localStorage.getItem(KEY+'.local')==='1'}catch(e){return false}});const[localAsk,setLocalAsk]=useState(false);
  const FBon=!!(window.FB&&window.FB.enabled);
  useEffect(()=>{let dead=false,off=()=>{};
-  Promise.race([window.fbReady,new Promise(r=>setTimeout(r,8000))]).then(()=>{if(dead)return;if(window.FB&&FB.enabled)off=FB.onAuth(u=>setUser(u?{uid:u.uid,email:u.email}:null));else setSync('local')});
+  Promise.race([window.fbReady,new Promise(r=>setTimeout(r,8000))]).then(()=>{if(dead)return;if(window.FB&&FB.enabled)off=FB.onAuth(u=>{setUser(u?{uid:u.uid,email:u.email}:null);setAuthReady(true)});else{setSync('local');setAuthReady(true)}});
   return()=>{dead=true;off()}},[]);
  useEffect(()=>{R.ref=null;R.ready=false;let un=()=>{};
   if(!user){if(FBon)setSync('local');return}
@@ -366,7 +366,7 @@ function App(){
    <label class="flex items-center gap-3 mt-4 text-sm text-zinc-400">Custom<input type="color" class="w-12 h-9 rounded-lg bg-transparent border border-white/10" value=${rgb2hex(S.accent)} onInput=${e=>setS(s=>({...s,accent:hex2(e.target.value)}))}/></label><//>
   <${Card} d=${2} c="lg:col-span-2"><h3 class="font-semibold">Account & sync</h3>
    ${!FBon?html`<p class="text-sm text-zinc-400 mt-1">Cloud sync is not configured. Add your Firebase keys to firebase-config.js to turn it on. Your data is saved on this device in the meantime.</p>`
-   :user?html`<p class="text-sm text-zinc-400 mt-1">Signed in as <b class="text-white">${user.email}</b>. Your data syncs privately across your devices.</p><${motion.button} whileTap=${{scale:.96}} class="mt-4 px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>FB.signOut()}>Sign out<//>`
+   :user?html`<p class="text-sm text-zinc-400 mt-1">Signed in as <b class="text-white">${user.email}</b>. Your data syncs privately across your devices.</p><${motion.button} whileTap=${{scale:.96}} class="mt-4 px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>{try{localStorage.removeItem(KEY+'.local')}catch(e){}setLocalOk(false);FB.signOut()}}>Sign out<//>`
    :html`<p class="text-sm text-zinc-400 mt-1">Sign in to sync across your phone and computer.</p>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"><input class="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 outline-none focus:border-white/30" type="email" autocomplete="email" placeholder="Email" value=${acct.email} onChange=${e=>setAcct(a=>({...a,email:e.target.value}))}/><input class="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 outline-none focus:border-white/30" type="password" autocomplete="current-password" placeholder="Password (6+ characters)" value=${acct.pw} onChange=${e=>setAcct(a=>({...a,pw:e.target.value}))}/></div>
     <div class="flex flex-wrap gap-2 mt-3"><${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl ac-bg text-sm font-semibold" onClick=${()=>doAuth('in')}>Sign in<//><${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>doAuth('up')}>Create account<//><${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>doAuth('google')}>Google<//></div>`}
@@ -437,6 +437,24 @@ function App(){
    <${Card}><h3 class="font-semibold">Allocation history</h3><div class="mt-2">
     <${AnimatePresence} initial=${false}>${log.map(b=>html`<${motion.div} layout key=${b.id} initial=${{opacity:0}} animate=${{opacity:b.undone?.5:1}} exit=${{opacity:0}} transition=${spr} class="flex items-center gap-2 py-2.5 border-b border-white/5 last:border-0"><div class="min-w-0 flex-1"><div class="text-sm">${b.kind==='apply'?'Allocated ':'Released '}${M(lsum(b))}</div><div class="text-xs text-zinc-500 truncate">${b.items.map(i=>i.name).join(', ')} · ${new Date(b.ts).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div></div>${b.undone?html`<span class="text-xs text-zinc-500">Undone</span>`:html`<${motion.button} whileTap=${{scale:.92}} class="text-xs px-3 py-1.5 rounded-full ac-soft ac-bd shrink-0" onClick=${()=>undoB(b)}>Undo<//>`}<//>`)}<//>${!log.length&&html`<${Empty} t="No allocation activity yet."/>`}</div><//></div>`};
  const SY={synced:['Synced','bg-emerald-400'],saving:['Saving…','bg-amber-400'],connecting:['Connecting…','bg-zinc-500'],local:['This device only','bg-zinc-500'],error:['Sync error','bg-rose-500']}[sync];
+
+ const showWel=authReady&&FBon&&!user&&!localOk;
+ const goLocal=()=>{try{localStorage.setItem(KEY+'.local','1')}catch(e){}setLocalOk(true);setLocalAsk(false)};
+ const winp='w-full rounded-xl bg-white/5 border border-white/10 px-3 py-3 outline-none focus:border-white/30';
+ const Welcome=()=>html`<${motion.div} key="welcome" initial=${{opacity:0}} animate=${{opacity:1}} exit=${{opacity:0}} transition=${{duration:.3}} class="fixed inset-0 z-[60] bg-black overflow-y-auto" style=${{paddingTop:'env(safe-area-inset-top,0px)',paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+  <div class="fixed inset-0 overflow-hidden pointer-events-none"><div class="absolute -top-32 -left-24 w-[420px] h-[420px] rounded-full ac-bg opacity-30 blur-[120px]" style=${{animation:'drift 16s ease-in-out infinite'}}></div><div class="absolute -bottom-32 -right-20 w-[460px] h-[460px] rounded-full ac-bg opacity-25 blur-[130px]" style=${{animation:'drift 20s ease-in-out infinite reverse'}}></div></div>
+  <div class="relative min-h-full flex items-center justify-center p-5">
+   <${motion.div} initial=${{opacity:0,y:24,scale:.98}} animate=${{opacity:1,y:0,scale:1}} transition=${spr} class="glass w-full max-w-md p-6 sm:p-8">
+    <div class="flex items-center gap-2 text-sm text-zinc-400"><span class="w-3 h-3 rounded-full ac-bg ac-dot shrink-0"></span>Budget Tracker</div>
+    <h1 class="text-3xl font-semibold tracking-tight mt-5">Welcome</h1>
+    <p class="text-sm text-zinc-400 mt-2">Track your wallets, payables, receivables and savings. Create a free account to keep your data safe and synced across your phone and computer.</p>
+    <div class="space-y-3 mt-6"><input class=${winp} type="email" autocomplete="email" placeholder="Email" value=${acct.email} onChange=${e=>setAcct(a=>({...a,email:e.target.value}))}/><input class=${winp} type="password" autocomplete="current-password" placeholder="Password (6+ characters)" value=${acct.pw} onChange=${e=>setAcct(a=>({...a,pw:e.target.value}))}/></div>
+    <${motion.button} whileTap=${{scale:.97}} class="w-full mt-4 px-4 py-3 rounded-xl ac-bg font-semibold" onClick=${()=>doAuth('up')}>Create account<//>
+    <div class="grid grid-cols-2 gap-3 mt-3"><${motion.button} whileTap=${{scale:.97}} class="px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>doAuth('in')}>Sign in<//><${motion.button} whileTap=${{scale:.97}} class="px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>doAuth('google')}>Google<//></div>
+    ${acct.msg&&html`<p class="text-sm ac-t mt-3">${acct.msg}</p>`}
+    ${localAsk?html`<div class="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm"><p class="font-semibold text-amber-200">Heads up: this won't be saved to an account</p><p class="text-zinc-300 mt-1">Your data stays on this device only. It won't sync to other devices, and you can lose it if you clear your browser data, uninstall the app or change phones. You can create an account later in Settings.</p><div class="flex gap-2 mt-3"><button class="px-3 py-2 rounded-xl bg-white/10 text-sm" onClick=${()=>setLocalAsk(false)}>Go back</button><button class="px-3 py-2 rounded-xl bg-white/15 text-sm" onClick=${goLocal}>Continue without saving</button></div></div>`
+    :html`<button class="mt-6 w-full text-center text-xs text-zinc-600 hover:text-zinc-400 py-2" onClick=${()=>setLocalAsk(true)}>Use on this device only (not saved)</button>`}
+   <//></div><//>`;
  const nav=[['home','Home','home',Home],['wallets','Wallets','wallet',Wallets],['pending','Pending','swap',Pend],['plan','Allocate','pie',Plan],['goals','Goals','target',Goals],['settings','Settings','set',Settings]];
  const cur=nav.find(n=>n[0]===view),Page=cur[3];
  const wipe=()=>setS(s=>({name:s.name,accent:s.accent,wallets:[],tx:[],debts:[],goals:[],sources:SRC(),alloc:{},allocLog:[]}));
@@ -461,6 +479,8 @@ function App(){
   <${motion.button} whileTap=${{scale:.88}} whileHover=${{scale:1.08}} class="md:hidden fixed right-5 bottom-24 z-40 w-14 h-14 rounded-full ac-grad ac-glow flex items-center justify-center" onClick=${()=>quick()} aria-label="Quick add"><${Ic} n="plus" s=${26}/><//>
   <nav class="nav-float md:hidden fixed bottom-3 left-3 right-3 z-30 glass !rounded-3xl flex p-1.5" style=${{marginBottom:'env(safe-area-inset-bottom,0px)'}}>${nav.map(([k,l,i])=>NavBtn({k,l,i,id:'nav-mob',mob:true}))}</nav>
   <${AnimatePresence}>${modal&&html`<${Form} key=${modal.title} title=${modal.title} fields=${modal.fields} init=${modal.init} cta=${modal.cta} onSubmit=${modal.submit} onDelete=${modal.del} onClose=${()=>setModal(null)}/>`}<//>
-  <${AnimatePresence}>${reset&&html`<${ResetFlow} key="reset" onClose=${()=>setReset(false)} onWipe=${wipe}/>`}<//></div>`;
+  <${AnimatePresence}>${reset&&html`<${ResetFlow} key="reset" onClose=${()=>setReset(false)} onWipe=${wipe}/>`}<//>
+  <${AnimatePresence}>${showWel&&Welcome()}<//>
+  ${!authReady&&!localOk&&html`<div class="fixed inset-0 z-[60] bg-black flex items-center justify-center"><span class="w-3 h-3 rounded-full ac-bg ac-dot animate-pulse"></span></div>`}</div>`;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(html`<${App}/>`);
