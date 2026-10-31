@@ -185,6 +185,72 @@ const Stat=({l,v,i,sub,d})=>html`<${motion.div} layout whileHover=${{y:-4,scale:
 const Card=({c='',children,d=0})=>html`<${motion.div} layout initial=${{opacity:0,y:20}} animate=${{opacity:1,y:0}} transition=${{...spr,delay:d*.06}} class=${'glass p-5 '+c}>${children}<//>`;
 
 
+/* ---------- Passcode lock, onboarding and tutorial ---------- */
+const PIN_KEY=KEY+'.pass',ONB_KEY=KEY+'.onb';
+const getPass=()=>{try{return JSON.parse(localStorage.getItem(PIN_KEY))}catch(e){return null}};
+const hashPin=async(pin,salt)=>{const str=salt+':'+pin;try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){let h=5381;for(const c of str)h=((h<<5)+h+c.charCodeAt(0))|0;return 'f'+h}};
+const savePass=async pin=>{const s=Math.random().toString(36).slice(2)+Date.now().toString(36);const h=await hashPin(pin,s);localStorage.setItem(PIN_KEY,JSON.stringify({s,h}))};
+const checkPass=async pin=>{const p=getPass();return !!p&&(await hashPin(pin,p.s))===p.h};
+const Shell=({z,children})=>html`<${motion.div} initial=${{opacity:0}} animate=${{opacity:1}} transition=${{duration:.25}} class=${'fixed inset-0 bg-black overflow-y-auto '+z} style=${{paddingTop:'env(safe-area-inset-top,0px)',paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+  <div class="fixed inset-0 overflow-hidden pointer-events-none"><div class="absolute -top-32 -left-24 w-[420px] h-[420px] rounded-full ac-bg opacity-30 blur-[120px]" style=${{animation:'drift 16s ease-in-out infinite'}}></div><div class="absolute -bottom-32 -right-20 w-[460px] h-[460px] rounded-full ac-bg opacity-25 blur-[130px]" style=${{animation:'drift 20s ease-in-out infinite reverse'}}></div></div>
+  <div class="relative min-h-full flex items-center justify-center p-5">${children}</div><//>`;
+function PinPad({title,sub,err,onComplete}){
+ const[pin,setPin]=useState('');
+ useEffect(()=>{setPin('')},[title,err&&err.n]);
+ useEffect(()=>{if(pin.length===4){const t=setTimeout(()=>onComplete(pin),130);return()=>clearTimeout(t)}},[pin]);
+ useEffect(()=>{const k=e=>{if(/^[0-9]$/.test(e.key))setPin(p=>p.length<4?p+e.key:p);else if(e.key==='Backspace')setPin(p=>p.slice(0,-1))};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
+ const key=d=>html`<${motion.button} key=${d} whileTap=${{scale:.9}} class="w-[4.5rem] h-[4.5rem] rounded-full bg-white/[0.07] border border-white/10 text-2xl font-medium" onClick=${()=>setPin(p=>p.length<4?p+d:p)}>${d}<//>`;
+ return html`<div>
+  <h2 class="text-2xl font-semibold tracking-tight mt-6">${title}</h2><p class="text-sm text-zinc-400 mt-2">${sub}</p>
+  <${motion.div} key=${err?err.n:0} animate=${err?{x:[0,-12,12,-8,8,0]}:{x:0}} transition=${{duration:.35}} class="flex justify-center gap-4 mt-7">${[0,1,2,3].map(i=>html`<span key=${i} class=${'w-3.5 h-3.5 rounded-full border '+(i<pin.length?'ac-bg ac-dot border-transparent':'border-white/30')}></span>`)}<//>
+  <p class="h-5 mt-3 text-sm text-rose-300">${err?err.msg:''}</p>
+  <div class="grid grid-cols-3 gap-4 mt-4 mx-auto w-fit">${[1,2,3,4,5,6,7,8,9].map(key)}<span></span>${key(0)}<${motion.button} whileTap=${{scale:.9}} class="w-[4.5rem] h-[4.5rem] rounded-full text-xl text-zinc-400" aria-label="Delete" onClick=${()=>setPin(p=>p.slice(0,-1))}>⌫<//></div></div>`;
+}
+function LockScreen({onUnlock,onReset}){
+ const[err,setErr]=useState(null);const[forgot,setForgot]=useState(false);
+ const go=async p=>{if(await checkPass(p))onUnlock();else setErr({msg:'Wrong passcode',n:Date.now()})};
+ return html`<${Shell} z="z-[80]"><div class="w-full max-w-xs text-center">
+  <div class="flex items-center justify-center gap-2 text-sm text-zinc-400"><span class="w-3 h-3 rounded-full ac-bg ac-dot"></span>Budget Tracker</div>
+  ${forgot?html`<div class="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-left"><p class="font-semibold text-amber-200">Reset passcode?</p><p class="text-zinc-300 mt-1">This signs you out and clears the app data stored on this device. If you have an account, sign back in and your data returns from the cloud. If you used the app without an account, that data is lost.</p><div class="flex gap-2 mt-3"><button class="px-3 py-2 rounded-xl bg-white/10 text-sm" onClick=${()=>setForgot(false)}>Cancel</button><button class="px-3 py-2 rounded-xl bg-white/15 text-sm" onClick=${onReset}>Reset and sign out</button></div></div>`
+  :html`<${PinPad} title="Enter passcode" sub="Budget Tracker is locked" err=${err} onComplete=${go}/><button class="mt-6 text-xs text-zinc-500 hover:text-zinc-300 py-2 px-4" onClick=${()=>setForgot(true)}>Forgot passcode?</button>`}
+ </div><//>`;
+}
+function PassFlow({mode,skippable,onClose,onDone}){
+ const[st,setSt]=useState(mode==='set'?'new':'old');const[tmp,setTmp]=useState('');const[err,setErr]=useState(null);
+ const bad=m=>setErr({msg:m,n:Date.now()});
+ const go=async p=>{
+  if(st==='old'){if(!(await checkPass(p)))return bad('Wrong passcode');setErr(null);if(mode==='remove'){try{localStorage.removeItem(PIN_KEY)}catch(e){}onDone('removed');return}setSt('new');return}
+  if(st==='new'){setTmp(p);setErr(null);setSt('confirm');return}
+  if(p!==tmp){setSt('new');return bad("Those did not match. Try again.")}
+  try{await savePass(p)}catch(e){return bad('Could not save the passcode on this device.')}
+  onDone('saved')};
+ const T={old:[mode==='remove'?'Enter your passcode':'Enter current passcode',mode==='remove'?'Enter it to turn the lock off':'Confirm it is you first'],new:[mode==='set'?'Create a passcode':'Choose a new passcode','You will be asked for it every time you open the app.'],confirm:['Confirm passcode','Enter the same 4 digits again']};
+ return html`<${Shell} z="z-[70]"><div class="w-full max-w-xs text-center">
+  <${PinPad} title=${T[st][0]} sub=${T[st][1]} err=${err} onComplete=${go}/>
+  <button class="mt-6 text-sm text-zinc-500 hover:text-zinc-300 py-2 px-4" onClick=${onClose}>${skippable?'Skip for now':'Cancel'}</button>
+  ${skippable&&html`<p class="text-xs text-zinc-600 mt-2">You can set one later in Settings.</p>`}
+ </div><//>`;
+}
+const TOUR=[
+ ['home','Your dashboard','Home shows how much you can spend right now, what you have spent this month, and where your money is heading by the end of the month.'],
+ ['wallet','Wallets','Add your cash, bank accounts and e-wallets. Balances update from your transactions. Money you receive lands in Cash on Hand by default.'],
+ ['swap','Payables and receivables','Pending tracks money you owe (payables) and money owed to you (receivables). Pay or receive in parts and mark them off as they settle.'],
+ ['pie','Smart allocation','Allocate splits your spendable money across urgent bills and savings goals so you set aside what matters first. Every allocation can be undone.'],
+ ['target','Savings goals','Create goals with a target amount and add money toward them whenever you can. Your progress is tracked as you go.'],
+ ['plus','Quick Add','Use the + button to log an expense, income, transfer, payable or receivable in seconds. Entries can repeat daily, weekly, monthly or yearly.'],
+ ['set','Make it yours','In Settings you can change the accent color, set a passcode, back up your data and manage sync. You can replay this tutorial there any time.']];
+function Tour({onDone}){
+ const[i,setI]=useState(0);const last=i===TOUR.length-1;const[ic,t,d]=TOUR[i];
+ return html`<${Shell} z="z-[65]"><${motion.div} initial=${{opacity:0,y:24,scale:.98}} animate=${{opacity:1,y:0,scale:1}} transition=${spr} class="glass w-full max-w-md p-6 sm:p-8">
+  <div class="flex items-center justify-between text-xs text-zinc-500"><span>Step ${i+1} of ${TOUR.length}</span><button class="py-1 px-2 hover:text-zinc-300" onClick=${onDone}>Skip tutorial</button></div>
+  <${AnimatePresence} mode="wait" initial=${false}><${motion.div} key=${i} initial=${{opacity:0,x:24}} animate=${{opacity:1,x:0}} exit=${{opacity:0,x:-24}} transition=${{duration:.2}} class="mt-8 min-h-[13rem]">
+   <div class="w-16 h-16 rounded-2xl ac-soft ac-bd flex items-center justify-center ac-t"><${Ic} n=${ic} s=${30}/></div>
+   <h2 class="text-2xl font-semibold tracking-tight mt-5">${t}</h2><p class="text-zinc-400 mt-2 leading-relaxed">${d}</p><//><//>
+  <div class="flex justify-center gap-1.5 mt-4">${TOUR.map((_,k)=>html`<span key=${k} class=${'h-1.5 rounded-full transition-all '+(k===i?'w-5 ac-bg':'w-1.5 bg-white/20')}></span>`)}</div>
+  <div class="flex gap-3 mt-6"><button class=${'px-4 py-3 rounded-xl bg-white/10 text-sm '+(i===0?'invisible':'')} onClick=${()=>setI(i-1)}>Back</button><${motion.button} whileTap=${{scale:.97}} class="flex-1 px-4 py-3 rounded-xl ac-bg font-semibold" onClick=${()=>last?onDone():setI(i+1)}>${last?'Get started':'Next'}<//></div>
+ <//><//>`;
+}
+
 function App(){
  const[S,setS]=useState(load);const[view,setView]=useState('home');const[modal,setModal]=useState(null);const[reset,setReset]=useState(false);const[hist,setHist]=useState({payable:false,receivable:false});const[bx,setBx]=useState({});const tg=(key,v)=>setBx(b=>({...b,[key]:b[key]===v?undefined:v}));const[pl,setPl]=useState({amount:'',reserve:'',hz:'14',strat:'due',save:'20',skip:{}});
  useEffect(()=>{let raf=0,last=window.scrollY,t;const root=document.documentElement;
@@ -200,7 +266,13 @@ function App(){
   if(!R.ref||!R.ready)return;
   clearTimeout(R.timer);setSync('saving');R.timer=setTimeout(push,700)},[S]);
  const[user,setUser]=useState(null);const[acct,setAcct]=useState({email:'',pw:'',msg:''});const[authReady,setAuthReady]=useState(false);const[localOk,setLocalOk]=useState(()=>{try{return localStorage.getItem(KEY+'.local')==='1'}catch(e){return false}});const[localAsk,setLocalAsk]=useState(false);
+ const[passOn,setPassOn]=useState(()=>!!getPass());const[locked,setLocked]=useState(()=>!!getPass());const[pf,setPf]=useState(null);const[pmsg,setPmsg]=useState('');const[onb,setOnbState]=useState(()=>{try{return localStorage.getItem(ONB_KEY)}catch(e){return null}});
+ const setOnb=v=>{setOnbState(v);try{v?localStorage.setItem(ONB_KEY,v):localStorage.removeItem(ONB_KEY)}catch(e){}};
+ useEffect(()=>{let t=0;const f=()=>{if(document.hidden)t=Date.now();else if(t&&Date.now()-t>5000&&getPass())setLocked(true)};document.addEventListener('visibilitychange',f);return()=>document.removeEventListener('visibilitychange',f)},[]);
+ const resetAll=async()=>{try{['','.t','.local','.pass','.onb'].forEach(x=>localStorage.removeItem(KEY+x))}catch(e){}try{if(window.FB&&FB.enabled)await FB.signOut()}catch(e){}location.reload()};
+
  const FBon=!!(window.FB&&window.FB.enabled);
+ const inApp=authReady&&(!!user||localOk||!FBon);
  useEffect(()=>{let dead=false,off=()=>{};
   Promise.race([window.fbReady,new Promise(r=>setTimeout(r,8000))]).then(()=>{if(dead)return;if(window.FB&&FB.enabled)off=FB.onAuth(u=>{setUser(u?{uid:u.uid,email:u.email}:null);setAuthReady(true)});else{setSync('local');setAuthReady(true)}});
   return()=>{dead=true;off()}},[]);
@@ -214,7 +286,7 @@ function App(){
    if(!R.ready){R.ready=true;if(d.t>=R.t)adopt(d);else{push()}return}
    if(d.t>R.sent&&d.t>R.t)adopt(d);else setSync('synced')},()=>setSync('error'));
   return()=>{un()}},[user&&user.uid]);
- const doAuth=async mode=>{try{setAcct(a=>({...a,msg:'Working…'}));if(mode==='google')await FB.google();else if(mode==='up')await FB.signUp(acct.email.trim(),acct.pw);else await FB.signIn(acct.email.trim(),acct.pw);setAcct({email:'',pw:'',msg:''})}catch(e){setAcct(a=>({...a,msg:String(e&&e.message||'Sign-in failed').replace('Firebase: ','')}))}};
+ const doAuth=async mode=>{try{setAcct(a=>({...a,msg:'Working…'}));if(mode==='google'){const r=await FB.google();const m=r&&r.user&&r.user.metadata;if(m&&m.creationTime===m.lastSignInTime)setOnb('pass')}else if(mode==='up'){setOnb('pass');await FB.signUp(acct.email.trim(),acct.pw)}else await FB.signIn(acct.email.trim(),acct.pw);setAcct({email:'',pw:'',msg:''})}catch(e){if(mode==='up')setOnb(null);setAcct(a=>({...a,msg:String(e&&e.message||'Sign-in failed').replace('Firebase: ','')}))}};
  const exportData=()=>{const bl=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}),u=URL.createObjectURL(bl),a=document.createElement('a');a.href=u;a.download='budget-tracker-backup-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500);setAcct(x=>({...x,msg:'Backup exported.'}))};
  const importData=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||!d.wallets)throw 0;setS(fixS(d));setAcct(x=>({...x,msg:'Backup imported.'}))}catch(x){setAcct(y=>({...y,msg:'That file is not a valid backup.'}))}};r.readAsText(f);e.target.value=''};
  const C=calc(S);const W=Object.fromEntries(S.wallets.map(w=>[w.id,w]));
@@ -364,6 +436,8 @@ function App(){
    <p class="text-xs text-zinc-500 mt-2">Shown in the dashboard greeting.</p><//>
   <${Card} d=${1}><h3 class="font-semibold mb-3">Accent color</h3><div class="flex flex-wrap gap-3">${SW.map(([n,c])=>html`<${motion.button} key=${n} title=${n} whileHover=${{scale:1.15}} whileTap=${{scale:.9}} onClick=${()=>setS(s=>({...s,accent:c}))} class="relative w-10 h-10 rounded-full" style=${{background:`rgb(${c})`,boxShadow:`0 0 18px rgb(${c}/.55)`}}>${S.accent===c&&html`<${motion.span} layoutId="swatch-ring" class="absolute -inset-1.5 rounded-full border-2 border-white/80" transition=${spr}/>`}<//>`)}</div>
    <label class="flex items-center gap-3 mt-4 text-sm text-zinc-400">Custom<input type="color" class="w-12 h-9 rounded-lg bg-transparent border border-white/10" value=${rgb2hex(S.accent)} onInput=${e=>setS(s=>({...s,accent:hex2(e.target.value)}))}/></label><//>
+  <${Card} d=${2}><h3 class="font-semibold">Passcode lock</h3><p class="text-sm text-zinc-400 mt-1">${passOn?'A 4-digit passcode is asked every time you open the app on this device.':'Lock the app with a 4-digit passcode that is asked every time you open it.'} It is stored on this device only and locks the screen; it does not encrypt your data.</p><div class="flex flex-wrap gap-2 mt-4">${passOn?html`<${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl ac-bg text-sm font-semibold" onClick=${()=>{setPmsg('');setPf('change')}}>Change passcode<//><${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>{setPmsg('');setPf('remove')}}>Remove<//>`:html`<${motion.button} whileTap=${{scale:.96}} class="px-4 py-2.5 rounded-xl ac-bg text-sm font-semibold" onClick=${()=>{setPmsg('');setPf('set')}}>Set passcode<//>`}</div>${pmsg&&html`<p class="text-sm ac-t mt-3">${pmsg}</p>`}<//>
+  <${Card} d=${2}><h3 class="font-semibold">Tutorial</h3><p class="text-sm text-zinc-400 mt-1">Replay the quick tour of how the app works.</p><${motion.button} whileTap=${{scale:.96}} class="mt-4 px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>setOnb('tour')}>Show tutorial<//><//>
   <${Card} d=${2} c="lg:col-span-2"><h3 class="font-semibold">Account & sync</h3>
    ${!FBon?html`<p class="text-sm text-zinc-400 mt-1">Cloud sync is not configured. Add your Firebase keys to firebase-config.js to turn it on. Your data is saved on this device in the meantime.</p>`
    :user?html`<p class="text-sm text-zinc-400 mt-1">Signed in as <b class="text-white">${user.email}</b>. Your data syncs privately across your devices.</p><${motion.button} whileTap=${{scale:.96}} class="mt-4 px-4 py-2.5 rounded-xl bg-white/10 text-sm" onClick=${()=>{try{localStorage.removeItem(KEY+'.local')}catch(e){}setLocalOk(false);FB.signOut()}}>Sign out<//>`
@@ -439,7 +513,7 @@ function App(){
  const SY={synced:['Synced','bg-emerald-400'],saving:['Saving…','bg-amber-400'],connecting:['Connecting…','bg-zinc-500'],local:['This device only','bg-zinc-500'],error:['Sync error','bg-rose-500']}[sync];
 
  const showWel=authReady&&FBon&&!user&&!localOk;
- const goLocal=()=>{try{localStorage.setItem(KEY+'.local','1')}catch(e){}setLocalOk(true);setLocalAsk(false)};
+ const goLocal=()=>{try{localStorage.setItem(KEY+'.local','1')}catch(e){}setLocalOk(true);setLocalAsk(false);setOnb('pass')};
  const winp='w-full rounded-xl bg-white/5 border border-white/10 px-3 py-3 outline-none focus:border-white/30';
  const Welcome=()=>html`<${motion.div} key="welcome" initial=${{opacity:0}} animate=${{opacity:1}} exit=${{opacity:0}} transition=${{duration:.3}} class="fixed inset-0 z-[60] bg-black overflow-y-auto" style=${{paddingTop:'env(safe-area-inset-top,0px)',paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
   <div class="fixed inset-0 overflow-hidden pointer-events-none"><div class="absolute -top-32 -left-24 w-[420px] h-[420px] rounded-full ac-bg opacity-30 blur-[120px]" style=${{animation:'drift 16s ease-in-out infinite'}}></div><div class="absolute -bottom-32 -right-20 w-[460px] h-[460px] rounded-full ac-bg opacity-25 blur-[130px]" style=${{animation:'drift 20s ease-in-out infinite reverse'}}></div></div>
@@ -481,6 +555,10 @@ function App(){
   <${AnimatePresence}>${modal&&html`<${Form} key=${modal.title} title=${modal.title} fields=${modal.fields} init=${modal.init} cta=${modal.cta} onSubmit=${modal.submit} onDelete=${modal.del} onClose=${()=>setModal(null)}/>`}<//>
   <${AnimatePresence}>${reset&&html`<${ResetFlow} key="reset" onClose=${()=>setReset(false)} onWipe=${wipe}/>`}<//>
   <${AnimatePresence}>${showWel&&Welcome()}<//>
-  ${!authReady&&!localOk&&html`<div class="fixed inset-0 z-[60] bg-black flex items-center justify-center"><span class="w-3 h-3 rounded-full ac-bg ac-dot animate-pulse"></span></div>`}</div>`;
+  ${!authReady&&!localOk&&html`<div class="fixed inset-0 z-[60] bg-black flex items-center justify-center"><span class="w-3 h-3 rounded-full ac-bg ac-dot animate-pulse"></span></div>`}
+  ${inApp&&onb==='pass'&&html`<${PassFlow} key="pf-onb" mode="set" skippable=${true} onClose=${()=>setOnb('tour')} onDone=${()=>{setPassOn(true);setOnb('tour')}}/>`}
+  ${inApp&&onb==='tour'&&html`<${Tour} key="tour" onDone=${()=>setOnb(null)}/>`}
+  ${pf&&html`<${PassFlow} key="pf-set" mode=${pf} skippable=${false} onClose=${()=>setPf(null)} onDone=${r=>{setPf(null);setPassOn(r==='saved');setPmsg(r==='saved'?'Passcode saved.':'Passcode removed.')}}/>`}
+  ${locked&&html`<${LockScreen} onUnlock=${()=>setLocked(false)} onReset=${resetAll}/>`}</div>`;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(html`<${App}/>`);
